@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>World Window</title>
+    <link rel="stylesheet" href="/world.css" />
+  </head>
+  <body>
+    <div class="hud">
+      <div>
+        <div class="label">Scene</div>
+        <div id="scene-title">Awaiting scene...</div>
+      </div>
+      <div>
+        <div class="label">Objective</div>
+        <div id="objective">Reach the marked relic.</div>
+      </div>
+      <div>
+        <div class="label">Controls</div>
+        <div>WASD or arrows to move</div>
+      </div>
+      <div>
+        <div class="label">State</div>
+        <div id="state">Exploring</div>
+      </div>
+    </div>
+
+    <canvas id="world-canvas" width="1200" height="760"></canvas>
+
+    <script src="/world.js" type="module"></script>
+  </body>
+</html>

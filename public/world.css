@@ -1,0 +1,52 @@
+:root {
+  --ink: #eef2f2;
+  --hud-bg: rgba(20, 26, 30, 0.74);
+  --hud-border: rgba(210, 240, 250, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Avenir Next", sans-serif;
+  color: var(--ink);
+  background: #0f1113;
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 0.6rem;
+  padding: 0.6rem;
+  background: var(--hud-bg);
+  border-bottom: 1px solid var(--hud-border);
+}
+
+.hud > div {
+  background: rgba(220, 240, 250, 0.05);
+  border: 1px solid rgba(220, 240, 250, 0.12);
+  border-radius: 8px;
+  padding: 0.45rem;
+}
+
+.label {
+  color: rgba(225, 240, 250, 0.7);
+  font-size: 0.75rem;
+}
+
+#world-canvas {
+  width: 100%;
+  height: calc(100vh - 90px);
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .hud {
+    grid-template-columns: 1fr 1fr;
+  }
+}

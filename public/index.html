@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorldModel DND Agentic DM</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="card">
+        <h1>Agentic DM Console</h1>
+        <p class="muted">Start a campaign, launch the world, and let the DM observe and steer scene evolution.</p>
+
+        <form id="campaign-form" class="stack">
+          <label>
+            D&D Setting
+            <input id="setting" type="text" placeholder="e.g., Hollow marsh ruins under moonlight" required />
+          </label>
+          <label>
+            Character
+            <textarea id="character" placeholder="e.g., Nyra, ranger who bargains with spirits" required></textarea>
+          </label>
+          <label>
+            Optional direction
+            <input id="direction" type="text" placeholder="e.g., more sneaky than combat-heavy" />
+          </label>
+          <button type="submit">Generate Opening Scene</button>
+        </form>
+
+        <div class="actions">
+          <button id="open-world" disabled>Open World Window</button>
+          <button id="observe" disabled>Observe World</button>
+          <button id="next-scene" disabled>Generate Next Scene</button>
+          <button id="auto-toggle" disabled>Start Auto Observe</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Campaign State</h2>
+        <div class="grid-2">
+          <div>
+            <div class="label">Current scene</div>
+            <div id="scene-title" class="value">None</div>
+          </div>
+          <div>
+            <div class="label">Worlds cleared</div>
+            <div id="worlds-cleared" class="value">0</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="label">Inventory</div>
+          <ul id="inventory" class="inventory"></ul>
+        </div>
+
+        <div>
+          <div class="label">Scene brief</div>
+          <p id="scene-brief" class="mono"></p>
+        </div>
+
+        <div>
+          <div class="label">World prompt</div>
+          <pre id="world-prompt"></pre>
+        </div>
+      </section>
+
+      <section class="card log-card">
+        <h2>DM Feed</h2>
+        <div id="log" class="log"></div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
