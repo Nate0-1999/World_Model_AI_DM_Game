@@ -1,0 +1,2 @@
+# Runtime dependencies for pip users.
+# The current MVP uses only the Python standard library at runtime.

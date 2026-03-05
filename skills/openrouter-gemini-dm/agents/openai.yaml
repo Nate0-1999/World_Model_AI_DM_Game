@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenRouter Gemini DM"
+  short_description: "OpenRouter + Gemini Flash DM loop for world-model campaigns."
+  default_prompt: "Design or update DM prompts, schemas, and control flow for a world-model campaign using OpenRouter Gemini Flash."

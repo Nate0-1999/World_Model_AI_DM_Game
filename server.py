@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
+import asyncio
 import json
 import mimetypes
 import os
 import re
 import traceback
+from dataclasses import asdict, is_dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from urllib import error, request
 
 ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT / "public"
+
+try:
+    from odyssey import Odyssey
+
+    ODYSSEY_SDK_IMPORT_ERROR = ""
+except Exception as exc:
+    Odyssey = None
+    ODYSSEY_SDK_IMPORT_ERROR = str(exc)
 
 
 def load_env_file(path: Path) -> None:
@@ -30,10 +41,17 @@ load_env_file(ROOT / ".env")
 
 PORT = int(os.environ.get("PORT", "8787"))
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
-TEXT_MODEL = os.environ.get("OPENROUTER_TEXT_MODEL", "openai/gpt-4.1-mini")
-VISION_MODEL = os.environ.get("OPENROUTER_VISION_MODEL", "openai/gpt-4.1-mini")
+TEXT_MODEL = os.environ.get("OPENROUTER_TEXT_MODEL", "google/gemini-3-flash")
+VISION_MODEL = os.environ.get("OPENROUTER_VISION_MODEL", "google/gemini-3-flash")
 SITE_URL = os.environ.get("OPENROUTER_SITE_URL", f"http://localhost:{PORT}")
 SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "WorldModel DND DM Local")
+ODYSSEY_API_KEY = os.environ.get("ODYSSEY_API_KEY", "").strip()
+ODYSSEY_DEFAULT_PORTRAIT = os.environ.get("ODYSSEY_DEFAULT_PORTRAIT", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 
 def extract_first_json(text: str):
@@ -95,6 +113,101 @@ def fallback_observation(scene, world_state):
             else "Keep current world active and watch for objective completion."
         ),
     }
+
+
+def to_jsonable(value):
+    if is_dataclass(value):
+        return to_jsonable(asdict(value))
+    if isinstance(value, dict):
+        return {str(k): to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_jsonable(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+
+    as_dict = getattr(value, "dict", None)
+    if callable(as_dict):
+        try:
+            return to_jsonable(as_dict())
+        except Exception:
+            pass
+
+    if hasattr(value, "__dict__"):
+        return {k: to_jsonable(v) for k, v in vars(value).items() if not k.startswith("_")}
+
+    return str(value)
+
+
+def odyssey_unavailable_reason() -> str:
+    if not ODYSSEY_API_KEY:
+        return "ODYSSEY_API_KEY is not set"
+    if Odyssey is None:
+        return f"odyssey SDK is unavailable: {ODYSSEY_SDK_IMPORT_ERROR or 'import failed'}"
+    return ""
+
+
+def parse_query_params(path: str) -> dict[str, list[str]]:
+    return parse_qs(urlparse(path).query)
+
+
+def parse_bool(value, default=False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return default
+
+
+def build_simulation_script(prompt: str, interactions: list[str], duration_ms: int) -> list[dict]:
+    safe_prompt = (prompt or "").strip() or "A fantasy dungeon chamber with a clear objective"
+    safe_interactions = [p.strip() for p in interactions if isinstance(p, str) and p.strip()]
+    safe_duration = max(3000, min(int(duration_ms), 120000))
+    timeline = [{"timestamp_ms": 0, "start": {"prompt": safe_prompt}}]
+
+    if safe_interactions:
+        spacing = max(2000, safe_duration // (len(safe_interactions) + 1))
+        current_ts = spacing
+        for interaction_prompt in safe_interactions:
+            if current_ts >= safe_duration:
+                break
+            timeline.append({"timestamp_ms": current_ts, "interact": {"prompt": interaction_prompt}})
+            current_ts += spacing
+
+    timeline.append({"timestamp_ms": safe_duration, "end": {}})
+    return timeline
+
+
+async def odyssey_simulate(script: list[dict], portrait: bool):
+    client = Odyssey(api_key=ODYSSEY_API_KEY)
+    return await client.simulate(script=script, portrait=portrait)
+
+
+async def odyssey_get_simulation_status(job_id: str):
+    client = Odyssey(api_key=ODYSSEY_API_KEY)
+    return await client.get_simulate_status(job_id)
+
+
+async def odyssey_list_simulations(limit: int | None, offset: int | None):
+    client = Odyssey(api_key=ODYSSEY_API_KEY)
+    return await client.list_simulations(limit=limit, offset=offset)
+
+
+async def odyssey_cancel_simulation(job_id: str):
+    client = Odyssey(api_key=ODYSSEY_API_KEY)
+    return await client.cancel_simulation(job_id)
+
+
+async def odyssey_get_recording(stream_id: str):
+    client = Odyssey(api_key=ODYSSEY_API_KEY)
+    return await client.get_recording(stream_id)
+
+
+def run_async(coro):
+    return asyncio.run(coro)
 
 
 def call_openrouter(model: str, messages, temperature: float = 0.8) -> str:
@@ -197,9 +310,19 @@ class Handler(BaseHTTPRequestHandler):
                     "openrouterConfigured": bool(OPENROUTER_API_KEY),
                     "textModel": TEXT_MODEL,
                     "visionModel": VISION_MODEL,
+                    "odysseyConfigured": bool(ODYSSEY_API_KEY),
+                    "odysseySdkAvailable": Odyssey is not None,
                 },
             )
             return
+        if self.path.startswith("/api/odyssey/health"):
+            return self.handle_odyssey_health()
+        if self.path.startswith("/api/odyssey/simulations/status"):
+            return self.handle_odyssey_simulation_status()
+        if self.path.startswith("/api/odyssey/simulations/list"):
+            return self.handle_odyssey_simulations_list()
+        if self.path.startswith("/api/odyssey/recording"):
+            return self.handle_odyssey_recording()
 
         self._serve_static(self.path)
 
@@ -208,8 +331,145 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_scene()
         if self.path.startswith("/api/dm/observe"):
             return self.handle_observe()
+        if self.path.startswith("/api/odyssey/simulations/start"):
+            return self.handle_odyssey_simulation_start()
+        if self.path.startswith("/api/odyssey/simulations/cancel"):
+            return self.handle_odyssey_simulation_cancel()
 
         self._send_json(404, {"error": "Not found"})
+
+    def _ensure_odyssey_ready(self):
+        reason = odyssey_unavailable_reason()
+        if reason:
+            self._send_json(
+                400,
+                {
+                    "ok": False,
+                    "error": reason,
+                    "odysseyConfigured": bool(ODYSSEY_API_KEY),
+                    "odysseySdkAvailable": Odyssey is not None,
+                    "sdkImportError": ODYSSEY_SDK_IMPORT_ERROR or None,
+                },
+            )
+            return False
+        return True
+
+    def handle_odyssey_health(self):
+        self._send_json(
+            200,
+            {
+                "ok": True,
+                "odysseyConfigured": bool(ODYSSEY_API_KEY),
+                "odysseySdkAvailable": Odyssey is not None,
+                "unavailableReason": odyssey_unavailable_reason() or None,
+            },
+        )
+
+    def handle_odyssey_simulation_start(self):
+        if not self._ensure_odyssey_ready():
+            return
+
+        body = self._read_json_body()
+        portrait = parse_bool(body.get("portrait"), default=ODYSSEY_DEFAULT_PORTRAIT)
+        prompt = body.get("prompt") if isinstance(body.get("prompt"), str) else ""
+        duration_ms = body.get("duration_ms", 12000)
+        try:
+            duration_ms = int(duration_ms)
+        except Exception:
+            duration_ms = 12000
+
+        interactions_raw = body.get("interactions")
+        interactions = interactions_raw if isinstance(interactions_raw, list) else []
+
+        script = body.get("script")
+        if not isinstance(script, list) or not script:
+            script = build_simulation_script(prompt, interactions, duration_ms)
+
+        try:
+            job = run_async(odyssey_simulate(script=script, portrait=portrait))
+            self._send_json(
+                200,
+                {
+                    "source": "odyssey",
+                    "job": to_jsonable(job),
+                    "script": script,
+                    "portrait": portrait,
+                },
+            )
+        except Exception as exc:
+            self._send_json(500, {"source": "odyssey_error", "error": str(exc)})
+
+    def handle_odyssey_simulation_status(self):
+        if not self._ensure_odyssey_ready():
+            return
+
+        params = parse_query_params(self.path)
+        job_id = (params.get("job_id") or [None])[0]
+        if not job_id:
+            self._send_json(400, {"error": "Missing required query parameter: job_id"})
+            return
+
+        try:
+            status = run_async(odyssey_get_simulation_status(job_id))
+            self._send_json(200, {"source": "odyssey", "status": to_jsonable(status)})
+        except Exception as exc:
+            self._send_json(500, {"source": "odyssey_error", "error": str(exc)})
+
+    def handle_odyssey_simulations_list(self):
+        if not self._ensure_odyssey_ready():
+            return
+
+        params = parse_query_params(self.path)
+        limit_raw = (params.get("limit") or [None])[0]
+        offset_raw = (params.get("offset") or [None])[0]
+
+        try:
+            limit = int(limit_raw) if limit_raw is not None else 10
+        except Exception:
+            limit = 10
+
+        try:
+            offset = int(offset_raw) if offset_raw is not None else 0
+        except Exception:
+            offset = 0
+
+        try:
+            result = run_async(odyssey_list_simulations(limit=limit, offset=offset))
+            self._send_json(200, {"source": "odyssey", "result": to_jsonable(result)})
+        except Exception as exc:
+            self._send_json(500, {"source": "odyssey_error", "error": str(exc)})
+
+    def handle_odyssey_simulation_cancel(self):
+        if not self._ensure_odyssey_ready():
+            return
+
+        body = self._read_json_body()
+        job_id = body.get("job_id")
+        if not isinstance(job_id, str) or not job_id.strip():
+            self._send_json(400, {"error": "Missing required body field: job_id"})
+            return
+
+        try:
+            run_async(odyssey_cancel_simulation(job_id.strip()))
+            self._send_json(200, {"source": "odyssey", "cancelled": True, "job_id": job_id.strip()})
+        except Exception as exc:
+            self._send_json(500, {"source": "odyssey_error", "error": str(exc)})
+
+    def handle_odyssey_recording(self):
+        if not self._ensure_odyssey_ready():
+            return
+
+        params = parse_query_params(self.path)
+        stream_id = (params.get("stream_id") or [None])[0]
+        if not stream_id:
+            self._send_json(400, {"error": "Missing required query parameter: stream_id"})
+            return
+
+        try:
+            recording = run_async(odyssey_get_recording(stream_id))
+            self._send_json(200, {"source": "odyssey", "recording": to_jsonable(recording)})
+        except Exception as exc:
+            self._send_json(500, {"source": "odyssey_error", "error": str(exc)})
 
     def handle_scene(self):
         body = self._read_json_body()

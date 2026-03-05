@@ -29,11 +29,16 @@
         </form>
 
         <div class="actions">
-          <button id="open-world" disabled>Open World Window</button>
-          <button id="observe" disabled>Observe World</button>
+          <button id="open-world" disabled>Open World Popout</button>
+          <button id="observe" disabled>Observe Now</button>
           <button id="next-scene" disabled>Generate Next Scene</button>
           <button id="auto-toggle" disabled>Start Auto Observe</button>
         </div>
+
+        <label class="toggle-row">
+          <input id="auto-transition" type="checkbox" checked />
+          Auto-transition to next scene when world is cleared
+        </label>
       </section>
 
       <section class="card">
@@ -68,6 +73,18 @@
       <section class="card log-card">
         <h2>DM Feed</h2>
         <div id="log" class="log"></div>
+      </section>
+
+      <section class="card world-card">
+        <h2>World View (Playable)</h2>
+        <p class="muted">Use WASD or arrow keys after clicking inside the world view.</p>
+        <iframe
+          id="world-inline-frame"
+          title="World View"
+          src="/world.html"
+          loading="eager"
+          referrerpolicy="no-referrer"
+        ></iframe>
       </section>
     </main>
 
