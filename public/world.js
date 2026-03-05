@@ -5,6 +5,18 @@ const sceneTitleEl = document.getElementById("scene-title");
 const objectiveEl = document.getElementById("objective");
 const stateEl = document.getElementById("state");
 
+function getHostWindow() {
+  if (window.opener && !window.opener.closed) return window.opener;
+  if (window.parent && window.parent !== window) return window.parent;
+  return null;
+}
+
+function postToHost(message) {
+  const host = getHostWindow();
+  if (!host) return;
+  host.postMessage(message, window.location.origin);
+}
+
 const world = {
   scene: null,
   width: canvas.width,
@@ -160,15 +172,12 @@ function updateEnemies() {
       addParticle(enemy.x, enemy.y, world.palette.glow);
       stateEl.textContent = "In conflict";
 
-      if (world.encounters % 3 === 0 && window.opener) {
-        window.opener.postMessage(
-          {
-            type: "world-event",
-            message: `Encounter burst: ${world.encounters} total`,
-            worldState: collectWorldState()
-          },
-          window.location.origin
-        );
+      if (world.encounters % 3 === 0) {
+        postToHost({
+          type: "world-event",
+          message: `Encounter burst: ${world.encounters} total`,
+          worldState: collectWorldState()
+        });
       }
     }
   }
@@ -186,16 +195,11 @@ function updateObjective() {
       addParticle(world.objective.x, world.objective.y, "#fff2ad");
     }
 
-    if (window.opener) {
-      window.opener.postMessage(
-        {
-          type: "world-event",
-          message: "Objective reached by player",
-          worldState: collectWorldState()
-        },
-        window.location.origin
-      );
-    }
+    postToHost({
+      type: "world-event",
+      message: "Objective reached by player",
+      worldState: collectWorldState()
+    });
   }
 }
 
@@ -347,24 +351,22 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (data.type === "host-ping") {
+    postToHost({ type: "world-ready" });
+    return;
+  }
+
   if (data.type === "capture-frame") {
     const imageDataUrl = canvas.toDataURL("image/png");
-    if (window.opener) {
-      window.opener.postMessage(
-        {
-          type: "frame-capture",
-          imageDataUrl,
-          worldState: collectWorldState()
-        },
-        window.location.origin
-      );
-    }
+    postToHost({
+      type: "frame-capture",
+      imageDataUrl,
+      worldState: collectWorldState()
+    });
   }
 });
 
-if (window.opener) {
-  window.opener.postMessage({ type: "world-ready" }, window.location.origin);
-}
+postToHost({ type: "world-ready" });
 
 resetFromScene({
   scene_title: "Awaiting DM scene",
